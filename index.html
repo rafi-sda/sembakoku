@@ -368,8 +368,15 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Total Biaya (Rp)</label>
                             <input type="number" id="kulakan-cost" min="0" placeholder="Total harga bayar..." class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500">
                         </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Status Pengiriman</label>
+                            <select id="kulakan-status" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
+                                <option value="Dikirim">Sedang Dikirim (Stok belum ditambah)</option>
+                                <option value="Diterima">Sudah Diterima (Langsung tambah stok)</option>
+                            </select>
+                        </div>
                         <button onclick="processKulakan()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-sm mt-2 flex items-center justify-center gap-2">
-                            <i class="fas fa-save"></i> Simpan & Tambah Stok
+                            <i class="fas fa-save"></i> Simpan Data Restock
                         </button>
                     </div>
 
@@ -384,6 +391,8 @@
                                         <th class="p-4 font-medium">Produk</th>
                                         <th class="p-4 font-medium">Qty</th>
                                         <th class="p-4 font-medium">Total Biaya</th>
+                                        <th class="p-4 font-medium text-center">Status</th>
+                                        <th class="p-4 font-medium text-right">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="kulakan-list" class="divide-y divide-gray-100 text-sm">
@@ -915,8 +924,8 @@ function setupSheets() {
   var sheetKulakan = ss.getSheetByName(SHEET_KULAKAN);
   if (!sheetKulakan) {
     sheetKulakan = ss.insertSheet(SHEET_KULAKAN);
-    sheetKulakan.appendRow(["ID", "Tanggal", "ID Produk", "Nama Produk", "Qty", "Total Biaya"]);
-    sheetKulakan.getRange("A1:F1").setFontWeight("bold").setBackground("#dbeafe");
+    sheetKulakan.appendRow(["ID", "Tanggal", "ID Produk", "Nama Produk", "Qty", "Total Biaya", "Status"]);
+    sheetKulakan.getRange("A1:G1").setFontWeight("bold").setBackground("#dbeafe");
   }
 
   // Setup Backup Log
@@ -980,7 +989,7 @@ function doGet(e) {
   for(var i = startRowKul; i < kulakanData.length; i++) {
       kulakan.push({
           id: kulakanData[i][0], date: kulakanData[i][1], prodId: kulakanData[i][2],
-          prodName: kulakanData[i][3], qty: Number(kulakanData[i][4]), cost: Number(kulakanData[i][5])
+          prodName: kulakanData[i][3], qty: Number(kulakanData[i][4]), cost: Number(kulakanData[i][5]), status: kulakanData[i][6] || 'Diterima'
       });
   }
   
@@ -1041,12 +1050,12 @@ function doPost(e) {
     var sheetKulakan = ss.getSheetByName(SHEET_KULAKAN);
     var kulRows = [];
     (payload.kulakan || []).forEach(function(k) {
-        if(k.id) kulRows.push([k.id, k.date, k.prodId, k.prodName, Number(k.qty)||0, Number(k.cost)||0]);
+        if(k.id) kulRows.push([k.id, k.date, k.prodId, k.prodName, Number(k.qty)||0, Number(k.cost)||0, k.status||'Diterima']);
     });
     if(kulRows.length > 0) {
-        sheetKulakan.clear(); sheetKulakan.appendRow(["ID", "Tanggal", "ID Produk", "Nama Produk", "Qty", "Total Biaya"]);
-        sheetKulakan.getRange("A1:F1").setFontWeight("bold").setBackground("#dbeafe");
-        sheetKulakan.getRange(2, 1, kulRows.length, 6).setValues(kulRows);
+        sheetKulakan.clear(); sheetKulakan.appendRow(["ID", "Tanggal", "ID Produk", "Nama Produk", "Qty", "Total Biaya", "Status"]);
+        sheetKulakan.getRange("A1:G1").setFontWeight("bold").setBackground("#dbeafe");
+        sheetKulakan.getRange(2, 1, kulRows.length, 7).setValues(kulRows);
     }
 
     var sheetBackup = ss.getSheetByName(SHEET_BACKUP);
@@ -1153,7 +1162,7 @@ function doPost(e) {
         };
         
         // URL GAS ditanam permanen di sini (Hardcoded untuk akses otomatis)
-        const defaultGasUrl = 'https://script.google.com/macros/s/AKfycbyXnsPePczGOMCQWSeP-JB9YBEppGp9bccsNG21mmddNmtKdSC3rChG4BCshEGMrARV/exec';
+        const defaultGasUrl = 'https://script.google.com/macros/s/AKfycbz_0nKaWmkoj3lxi5x4zug430dSqTk7oTHvlVqCDy4ry3HcmJhE7PaRLnwutEHTrZFV7g/exec';
         let gasUrl = localStorage.getItem('sembakoku_gas_url') || defaultGasUrl;
         
         let myChart = null; // Instansi grafik chart.js
@@ -2160,26 +2169,54 @@ function doPost(e) {
             const sorted = [...appState.kulakan].sort((a,b) => new Date(b.date) - new Date(a.date)).slice(0, 10); // Show last 10
             
             if(sorted.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-gray-500">Belum ada riwayat restock barang.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">Belum ada riwayat restock barang.</td></tr>`;
                 return;
             }
 
             sorted.forEach(k => {
+                const isDiterima = k.status === 'Diterima';
+                const statusBadge = isDiterima 
+                    ? `<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold">Diterima</span>`
+                    : `<span class="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"><i class="fas fa-truck text-[9px]"></i> Dikirim</span>`;
+                
+                const actionBtn = isDiterima 
+                    ? `<span class="text-gray-400 text-xs"><i class="fas fa-check"></i> Selesai</span>` 
+                    : `<button onclick="markKulakanReceived('${k.id}')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-1 rounded text-xs font-medium transition shadow-sm whitespace-nowrap">Terima Barang</button>`;
+
                 tbody.innerHTML += `
                     <tr class="hover:bg-gray-50">
                         <td class="p-3 text-gray-500 text-xs">${formatDate(k.date)}</td>
                         <td class="p-3 font-medium text-gray-800">${k.prodName}</td>
                         <td class="p-3 font-bold text-blue-600">+${k.qty}</td>
                         <td class="p-3 font-medium text-red-500">-${formatRp(k.cost)}</td>
+                        <td class="p-3 text-center">${statusBadge}</td>
+                        <td class="p-3 text-right">${actionBtn}</td>
                     </tr>
                 `;
             });
+        }
+
+        function markKulakanReceived(id) {
+            const kulakan = appState.kulakan.find(k => k.id === id);
+            if (!kulakan || kulakan.status === 'Diterima') return;
+
+            const prod = appState.products.find(p => p.id === kulakan.prodId);
+            if (prod) {
+                prod.stock += kulakan.qty;
+            }
+
+            kulakan.status = 'Diterima';
+            
+            triggerDataSync();
+            renderKulakanForm();
+            showToast(`Barang ${kulakan.prodName} telah diterima. Stok ditambahkan!`, 'success');
         }
 
         function processKulakan() {
             const prodId = document.getElementById('kulakan-product').value;
             const qty = parseFloat(document.getElementById('kulakan-qty').value);
             const cost = parseFloat(document.getElementById('kulakan-cost').value);
+            const status = document.getElementById('kulakan-status').value;
 
             if(!prodId || !qty || qty <= 0 || !cost || cost < 0) {
                 return showToast('Mohon lengkapi form restock dengan benar!', 'error');
@@ -2188,8 +2225,10 @@ function doPost(e) {
             const prod = appState.products.find(p => p.id === prodId);
             if(!prod) return;
 
-            // Tambah stok
-            prod.stock += qty;
+            // Tambah stok HANYA jika status sudah Diterima
+            if (status === 'Diterima') {
+                prod.stock += qty;
+            }
 
             // Catat riwayat
             const kulakanData = {
@@ -2198,7 +2237,8 @@ function doPost(e) {
                 prodId: prod.id,
                 prodName: prod.name,
                 qty: qty,
-                cost: cost
+                cost: cost,
+                status: status
             };
             appState.kulakan.push(kulakanData);
 
@@ -2207,7 +2247,12 @@ function doPost(e) {
             
             triggerDataSync();
             renderKulakanForm(); // Refresh dropdown info sisa stok & history list
-            showToast(`Berhasil menambah ${qty} stok ${prod.name}`, 'success');
+            
+            if (status === 'Diterima') {
+                showToast(`Berhasil menambah ${qty} stok ${prod.name}`, 'success');
+            } else {
+                showToast(`Pesanan ${prod.name} dicatat (Sedang Dikirim).`, 'success');
+            }
         }
 
         // --- Settings Logic ---
