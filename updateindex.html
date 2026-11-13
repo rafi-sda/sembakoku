@@ -1154,6 +1154,11 @@ function doPost(e) {
             currentCheckout: { total: 0, method: 'Tunai', cash: 0, change: 0 }
         };
 
+        // Pembersihan Otomatis (Auto-Cleanup): Buang transaksi kosong/error dari memori lokal
+        if (appState.transactions) {
+            appState.transactions = appState.transactions.filter(t => t.id && t.date && t.id.toString().trim() !== '' && !isNaN(new Date(t.date).getTime()));
+        }
+
         // Fungsi menyimpan ke memori lokal browser (Offline-First)
         function saveLocalState() {
             localStorage.setItem('sembakoku_appState', JSON.stringify(appState));
@@ -1469,8 +1474,9 @@ function doPost(e) {
                 triggerDataSync();
                 renderProducts();
                 showToast('Produk berhasil dihapus', 'success');
-            } else if (itemToDeleteType === 'transaction' && itemToDeleteId) {
-                appState.transactions = appState.transactions.filter(t => t.id !== itemToDeleteId);
+            } else if (itemToDeleteType === 'transaction' && itemToDeleteId !== null) {
+                // Pastikan tipe data sama saat membandingkan (menggunakan String) agar tombol hapus merespon
+                appState.transactions = appState.transactions.filter(t => String(t.id) !== String(itemToDeleteId));
                 triggerDataSync();
                 renderReport();
                 renderDashboard(); // Refresh total penjualan di dashboard
@@ -2447,7 +2453,11 @@ function doPost(e) {
                 
                 if (result.status === 'success') {
                     appState.products = result.products || [];
-                    appState.transactions = result.transactions || [];
+                    
+                    // Pembersihan Otomatis: Buang data baris kosong yang ikut terbawa dari Google Sheets
+                    const rawTransactions = result.transactions || [];
+                    appState.transactions = rawTransactions.filter(t => t.id && t.date && t.id.toString().trim() !== '' && !isNaN(new Date(t.date).getTime()));
+                    
                     appState.kasbon = result.kasbon || [];
                     appState.kulakan = result.kulakan || [];
                     
