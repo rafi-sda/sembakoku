@@ -193,7 +193,6 @@
                             <i class="fas fa-boxes text-2xl"></i>
                         </div>
                         <div>
-                            <!-- PENGGANTIAN NAMA DI SINI -->
                             <p class="text-sm text-gray-500 font-medium">Total Modal Stok</p>
                             <h3 id="dash-inventory-value" class="text-xl font-bold text-gray-800">Rp 0</h3>
                         </div>
@@ -372,7 +371,7 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1">Status Pengiriman</label>
                             <select id="kulakan-status" class="w-full px-4 py-2 border rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white">
                                 <option value="Dikirim">Sedang Dikirim (Stok belum ditambah)</option>
-                                <option value="Diterima">Sudah Diterima (Langsung tambah stok)</option>
+                                <option value="Diterima">Diterima (Stok langsung ditambah)</option>
                             </select>
                         </div>
                         <button onclick="processKulakan()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-sm mt-2 flex items-center justify-center gap-2">
@@ -391,8 +390,8 @@
                                         <th class="p-4 font-medium">Produk</th>
                                         <th class="p-4 font-medium">Qty</th>
                                         <th class="p-4 font-medium">Total Biaya</th>
-                                        <th class="p-4 font-medium text-center">Status</th>
-                                        <th class="p-4 font-medium text-right">Aksi</th>
+                                        <th class="p-4 font-medium">Status</th>
+                                        <th class="p-4 font-medium text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="kulakan-list" class="divide-y divide-gray-100 text-sm">
@@ -1139,7 +1138,8 @@ function doPost(e) {
         }
 
         // --- State Management ---
-        let appState = {
+        const savedState = localStorage.getItem('sembakoku_appState');
+        let appState = savedState ? JSON.parse(savedState) : {
             products: [
                 { id: '1700000001', sku: 'SKU-001', barcode: '12345', category: 'Sembako', name: 'Beras Pandan Wangi', stock: 10, minStock: 5, unit: 'karung', buyPrice: 120000, sellPrice: 135000 },
                 { id: '1700000002', sku: 'SKU-002', barcode: '67890', category: 'Sembako', name: 'Minyak Goreng Bimoli', stock: 50, minStock: 10, unit: 'dus', buyPrice: 180000, sellPrice: 195000 },
@@ -1147,12 +1147,17 @@ function doPost(e) {
             ],
             transactions: [],
             kasbon: [], // { id, name, totalDebt, paid, remaining, status, history: [{date, amount}] }
-            kulakan: [], // { id, date, prodId, prodName, qty, cost }
+            kulakan: [], // { id, date, prodId, prodName, qty, cost, status }
             cart: [],
             posCategory: 'Semua',
             cartDiscount: 0,
             currentCheckout: { total: 0, method: 'Tunai', cash: 0, change: 0 }
         };
+
+        // Fungsi menyimpan ke memori lokal browser (Offline-First)
+        function saveLocalState() {
+            localStorage.setItem('sembakoku_appState', JSON.stringify(appState));
+        }
         
         let storeProfile = JSON.parse(localStorage.getItem('sembakoku_profile')) || {
             name: 'SembakoKu',
@@ -1161,8 +1166,8 @@ function doPost(e) {
             logo: ''
         };
         
-        // URL GAS ditanam permanen di sini (Hardcoded untuk akses otomatis)
-        const defaultGasUrl = 'https://script.google.com/macros/s/AKfycbz_0nKaWmkoj3lxi5x4zug430dSqTk7oTHvlVqCDy4ry3HcmJhE7PaRLnwutEHTrZFV7g/exec';
+        // URL GAS (Kosongkan secara default agar tidak muncul error "Failed to fetch" sebelum URL diatur oleh user)
+        const defaultGasUrl = ''; 
         let gasUrl = localStorage.getItem('sembakoku_gas_url') || defaultGasUrl;
         
         let myChart = null; // Instansi grafik chart.js
@@ -1690,6 +1695,7 @@ function doPost(e) {
             });
 
             calculateCartTotal();
+            saveLocalState(); // Simpan status keranjang secara lokal
         }
 
         function reprintReceipt(trxId) {
@@ -2174,14 +2180,15 @@ function doPost(e) {
             }
 
             sorted.forEach(k => {
-                const isDiterima = k.status === 'Diterima';
-                const statusBadge = isDiterima 
-                    ? `<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full text-[10px] font-bold">Diterima</span>`
-                    : `<span class="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-[10px] font-bold whitespace-nowrap"><i class="fas fa-truck text-[9px]"></i> Dikirim</span>`;
+                const currentStatus = k.status || 'Diterima'; // default untuk data lama
+                const statusBadge = (currentStatus === 'Diterima') 
+                    ? `<span class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-bold whitespace-nowrap"><i class="fas fa-check-circle mr-1"></i>Diterima</span>`
+                    : `<span class="bg-orange-100 text-orange-700 px-2 py-1 rounded text-xs font-bold whitespace-nowrap"><i class="fas fa-truck mr-1"></i>Dikirim</span>`;
                 
-                const actionBtn = isDiterima 
-                    ? `<span class="text-gray-400 text-xs"><i class="fas fa-check"></i> Selesai</span>` 
-                    : `<button onclick="markKulakanReceived('${k.id}')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-2 py-1 rounded text-xs font-medium transition shadow-sm whitespace-nowrap">Terima Barang</button>`;
+                // PERBAIKAN: Tombol berubah jadi abu-abu "Selesai", bukan menghilang
+                const actionBtn = (currentStatus === 'Diterima')
+                    ? `<button disabled class="bg-gray-100 text-gray-400 border border-gray-200 px-3 py-1.5 rounded-lg text-xs font-bold cursor-not-allowed whitespace-nowrap shadow-none"><i class="fas fa-check mr-1"></i>Selesai</button>`
+                    : `<button onclick="terimaBarang('${k.id}')" class="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition shadow-sm whitespace-nowrap">Terima Barang</button>`;
 
                 tbody.innerHTML += `
                     <tr class="hover:bg-gray-50">
@@ -2189,34 +2196,18 @@ function doPost(e) {
                         <td class="p-3 font-medium text-gray-800">${k.prodName}</td>
                         <td class="p-3 font-bold text-blue-600">+${k.qty}</td>
                         <td class="p-3 font-medium text-red-500">-${formatRp(k.cost)}</td>
-                        <td class="p-3 text-center">${statusBadge}</td>
-                        <td class="p-3 text-right">${actionBtn}</td>
+                        <td class="p-3">${statusBadge}</td>
+                        <td class="p-3 text-center">${actionBtn}</td>
                     </tr>
                 `;
             });
-        }
-
-        function markKulakanReceived(id) {
-            const kulakan = appState.kulakan.find(k => k.id === id);
-            if (!kulakan || kulakan.status === 'Diterima') return;
-
-            const prod = appState.products.find(p => p.id === kulakan.prodId);
-            if (prod) {
-                prod.stock += kulakan.qty;
-            }
-
-            kulakan.status = 'Diterima';
-            
-            triggerDataSync();
-            renderKulakanForm();
-            showToast(`Barang ${kulakan.prodName} telah diterima. Stok ditambahkan!`, 'success');
         }
 
         function processKulakan() {
             const prodId = document.getElementById('kulakan-product').value;
             const qty = parseFloat(document.getElementById('kulakan-qty').value);
             const cost = parseFloat(document.getElementById('kulakan-cost').value);
-            const status = document.getElementById('kulakan-status').value;
+            const status = document.getElementById('kulakan-status').value || 'Diterima';
 
             if(!prodId || !qty || qty <= 0 || !cost || cost < 0) {
                 return showToast('Mohon lengkapi form restock dengan benar!', 'error');
@@ -2225,9 +2216,15 @@ function doPost(e) {
             const prod = appState.products.find(p => p.id === prodId);
             if(!prod) return;
 
-            // Tambah stok HANYA jika status sudah Diterima
+            // Tambah stok JIKA status Diterima
             if (status === 'Diterima') {
-                prod.stock += qty;
+                // Hitung Harga Beli Rata-Rata (Moving Average Cost)
+                const oldTotalValue = prod.stock * prod.buyPrice;
+                const newTotalValue = oldTotalValue + cost;
+                const newStock = prod.stock + qty;
+                
+                prod.buyPrice = newTotalValue / newStock; // Update harga modal terbaru
+                prod.stock = newStock; // Update stok terbaru
             }
 
             // Catat riwayat
@@ -2244,15 +2241,48 @@ function doPost(e) {
 
             document.getElementById('kulakan-qty').value = '';
             document.getElementById('kulakan-cost').value = '';
+            document.getElementById('kulakan-status').value = 'Dikirim'; // Default kembali ke dikirim
             
-            triggerDataSync();
+            triggerDataSync(); // Panggil fungsi sync agar tersimpan ke cloud
             renderKulakanForm(); // Refresh dropdown info sisa stok & history list
             
             if (status === 'Diterima') {
                 showToast(`Berhasil menambah ${qty} stok ${prod.name}`, 'success');
             } else {
-                showToast(`Pesanan ${prod.name} dicatat (Sedang Dikirim).`, 'success');
+                showToast(`Data restock disimpan dengan status Dikirim.`, 'success');
             }
+        }
+
+        // Fungsi baru untuk memproses tombol "Terima Barang" di tabel
+        function terimaBarang(kulakanId) {
+            const kulakan = appState.kulakan.find(k => k.id === kulakanId);
+            if (!kulakan || kulakan.status === 'Diterima') return;
+
+            // 1. Cari produk terkait dan tambahkan stok serta update harga modal
+            const prod = appState.products.find(p => p.id === kulakan.prodId);
+            if (prod) {
+                // Hitung Harga Beli Rata-Rata (Moving Average Cost)
+                const oldTotalValue = prod.stock * prod.buyPrice;
+                const newTotalValue = oldTotalValue + kulakan.cost;
+                const newStock = prod.stock + kulakan.qty;
+                
+                prod.buyPrice = newTotalValue / newStock; // Update harga modal terbaru
+                prod.stock = newStock; // Update stok terbaru
+            }
+
+            // 2. Ubah status di riwayat
+            kulakan.status = 'Diterima';
+
+            // 3. SIMPAN LANGSUNG KE MEMORI LOKAL (Agar tidak hilang saat di-refresh!)
+            saveLocalState();
+
+            // 4. Update tampilan tabel agar tombolnya langsung berubah
+            renderKulakanList(); 
+            
+            // 5. Sync ke Google Sheets di latar belakang (tanpa mengganggu layar)
+            triggerDataSync();
+            
+            showToast('Barang diterima, stok toko berhasil ditambahkan!', 'success');
         }
 
         // --- Settings Logic ---
@@ -2366,12 +2396,16 @@ function doPost(e) {
         }
 
         function triggerDataSync() {
-            if (!gasUrl) return; // Only sync if URL is provided
+            saveLocalState(); // Selalu simpan ke local storage tiap ada perubahan
+            
+            // Cegah sinkronisasi ke cloud jika URL masih kosong atau masih pakai URL dummy
+            if (!gasUrl || gasUrl.includes('AKfycbyXnsPePczGOMCQWSeP-JB9YBEppGp9bccsNG21mmddNmtKdSC3rChG4BCshEGMrARV')) return; 
+            
             syncDataToGas();
         }
 
         async function syncDataToGas() {
-            if (!gasUrl) return showToast('Harap masukkan URL Web App GAS terlebih dahulu', 'error');
+            if (!gasUrl || gasUrl.includes('AKfycbyXnsPePczGOMCQWSeP-JB9YBEppGp9bccsNG21mmddNmtKdSC3rChG4BCshEGMrARV')) return showToast('Harap masukkan URL Web App GAS Anda sendiri di Pengaturan', 'error');
             
             showLoading('Menyimpan data ke Cloud...');
             document.getElementById('sync-status-text').textContent = 'Menyimpan data...';
@@ -2403,7 +2437,7 @@ function doPost(e) {
         }
 
         async function fetchDataFromGas() {
-            if (!gasUrl) return showToast('Harap masukkan URL Web App GAS terlebih dahulu', 'error');
+            if (!gasUrl || gasUrl.includes('AKfycbyXnsPePczGOMCQWSeP-JB9YBEppGp9bccsNG21mmddNmtKdSC3rChG4BCshEGMrARV')) return showToast('Harap masukkan URL Web App GAS Anda sendiri di Pengaturan', 'error');
             
             showLoading('Mengunduh data dari Cloud...');
             document.getElementById('sync-status-text').textContent = 'Mengunduh data...';
@@ -2416,6 +2450,9 @@ function doPost(e) {
                     appState.transactions = result.transactions || [];
                     appState.kasbon = result.kasbon || [];
                     appState.kulakan = result.kulakan || [];
+                    
+                    saveLocalState(); // Kunci/Simpan data dari internet ke memori lokal browser
+                    
                     document.getElementById('sync-status-text').textContent = 'Terhubung ke Google Sheets (Otomatis)';
                     showToast('Data berhasil dimuat dari Sheets');
                     
@@ -2445,12 +2482,18 @@ function doPost(e) {
             if (gasUrl) {
                 document.getElementById('gas-url-input').value = gasUrl;
             }
+            
+            // Tampilkan data lokal sementara agar layar tidak kosong
             renderDashboard();
             updateSyncStatusUI();
             
-            if (gasUrl) {
-                fetchDataFromGas();
-            }
+            // PERBAIKAN FINAL: 
+            // Kita HAPUS fitur penarikan data otomatis dari Google Sheets di sini.
+            // Ini akan mencegah data yang baru saja Anda klik tertimpa oleh data lama 
+            // dari Google Sheets ketika Anda me-refresh halamannya.
+            // 
+            // Jika Anda butuh menarik data dari perangkat lain, 
+            // cukup klik tombol "Tarik Data dari Sheets" di menu Pengaturan secara manual.
         };
 
     </script>
